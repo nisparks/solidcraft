@@ -53,10 +53,20 @@ pub fn parse_import_response(status: u16, body: &[u8]) -> Result<String, String>
         });
     }
     let url = json.as_ref().and_then(|j| j.get("easyprint_url")).and_then(Value::as_str).ok_or("EasyPrint's answer had no address to open")?;
-    // Only a Printables address is opened in the browser, whatever the server says.
+    // Only a Printables address is opened in the browser, whatever the server says. Browsers read
+    // a backslash as a slash and drop tabs and line breaks, so an address holding any of them is
+    // refused rather than read one way here and another way there; the host is plain letters,
+    // digits, dots and dashes (no user, port or escapes).
+    let plain = !url.contains('\\') && !url.chars().any(|c| c.is_control() || c.is_whitespace());
     let host = url.strip_prefix("https://").map(|rest| rest.split(['/', '?', '#']).next().unwrap_or_default());
     match host {
-        Some(h) if !h.contains(['@', ':']) && (h == "printables.com" || h.ends_with(".printables.com")) => Ok(url.to_string()),
+        Some(h)
+            if plain
+                && h.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-'))
+                && (h == "printables.com" || h.ends_with(".printables.com")) =>
+        {
+            Ok(url.to_string())
+        }
         _ => Err("EasyPrint's answer pointed somewhere other than Printables, so it was not opened".into()),
     }
 }
@@ -87,10 +97,19 @@ mod tests {
             "https://printables.com.evil.example/x",
             "https://www.printables.com@evil.example/x",
             "javascript:alert(1)",
+            // A browser reads the backslash as a slash and goes to evil.example.
+            "https://evil.example\\.printables.com/x",
+            "https://evil.example\\@www.printables.com/x",
+            "https://evil.example%2F.printables.com/x",
+            "https://www.printables.com:8443/x",
+            "https://evil.example\t.printables.com/x",
+            "https://www.printables.com/x\n",
         ] {
-            let body = format!(r#"{{"easyprint_url":"{url}"}}"#);
+            let body = serde_json::json!({ "easyprint_url": url }).to_string();
             assert!(parse_import_response(200, body.as_bytes()).is_err(), "{url}");
         }
+        let fine = serde_json::json!({ "easyprint_url": "https://printables.com/slice?a=1#b" }).to_string();
+        assert!(parse_import_response(200, fine.as_bytes()).is_ok());
     }
 
     #[test]

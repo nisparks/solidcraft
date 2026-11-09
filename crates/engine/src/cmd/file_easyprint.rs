@@ -1,6 +1,7 @@
 //! `file.open_in_easyprint`: export the bodies and hand the file to the host to upload to
 //! EasyPrint (Printables' slicer in the browser). The model leaves the machine, so the command
-//! refuses unless the caller says the user agreed (`consent`). The host does the HTTP and opens the
+//! refuses unless the caller says the user agreed (`consent`), and the app's upload refuses unless
+//! the user agreed in the app itself (`easyprint_ui`). The host does the HTTP and opens the
 //! answer; see [`crate::easyprint`].
 
 use serde_json::{Value, json};

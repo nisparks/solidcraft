@@ -134,7 +134,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec::new("file.open_in_easyprint", "Open with EasyPrint", easyprint::open_in_easyprint)
         .icon("mesh_export")
         .noundo()
-        .params("consent: bool (required: true only once the user has agreed to upload the model to Printables' servers; it stays there for 30 minutes and opening it needs a Printables sign-in); bodies?: [names] (default: the selected bodies); format?: 3mf|stl (default 3mf, in millimetres) → uploads the bodies to EasyPrint, Printables' slicer in the browser, and opens it in the browser. 100 MB at most. Works in the desktop app and the browser build; the CLI has no way to upload yet"),
+        .params("consent: bool (required: true only once the user has agreed to upload the model to Printables' servers; it stays there for 30 minutes and opening it needs a Printables sign-in. The app also refuses until the user has agreed in its own Open with EasyPrint question, whatever `consent` says); bodies?: [names] (default: the selected bodies); format?: 3mf|stl (default 3mf, in millimetres) → uploads the bodies to EasyPrint, Printables' slicer in the browser, and opens it in the browser. 100 MB at most. Works in the desktop app and the browser build; the CLI has no way to upload yet"),
     CommandSpec::new("file.slicers", "Installed Slicers", crate::checked!("file.slicers", slicers))
         .icon("export")
         .noundo()

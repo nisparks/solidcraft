@@ -1,8 +1,8 @@
-//! Makes SolidCraft available to the AI apps on this computer without a step from the user: at
+//! Makes SolidCraft available to the AI apps on this computer once the user turns it on: at
 //! start-up, off the window thread, the `solidcraft` entry is added to each installed client
 //! (`solidcraft_engine::agent_setup`), and a status message names the clients that got it for the
-//! first time. The preference "Make SolidCraft available to AI apps on this computer" turns it
-//! off, which takes the entries out again. Best effort: nothing here can fail the launch.
+//! first time. The preference "Add SolidCraft to AI apps" is off by default; turning it off again
+//! takes the entries out. Best effort: nothing here can fail the launch.
 
 use crate::SolveApp;
 
@@ -147,10 +147,23 @@ mod tests {
     }
 
     #[test]
-    fn it_is_on_by_default_and_saved_off_stays_off() {
-        assert!(crate::prefs::Prefs::default().connect_ai_apps);
+    fn it_is_off_by_default_and_saved_on_stays_on() {
+        assert!(!crate::prefs::Prefs::default().connect_ai_apps);
         let mut app = SolveApp::new(Default::default(), Default::default());
+        assert!(!app.preferences.connect_ai_apps);
+        app.load_prefs(&serde_json::json!({ "preferences": { "connect_ai_apps": true } }).to_string());
+        assert!(app.preferences.connect_ai_apps);
         app.load_prefs(&serde_json::json!({ "preferences": { "connect_ai_apps": false } }).to_string());
         assert!(!app.preferences.connect_ai_apps);
+    }
+
+    #[test]
+    fn a_fresh_start_touches_no_client() {
+        let mut app = SolveApp::new(Default::default(), Default::default());
+        // Checked first: were it on, the tick below would edit this computer's AI apps.
+        assert!(!app.preferences.connect_ai_apps);
+        begin(&mut app);
+        tick(&mut app);
+        assert!(app.ai_connect.job.is_none(), "nothing added, nothing removed");
     }
 }

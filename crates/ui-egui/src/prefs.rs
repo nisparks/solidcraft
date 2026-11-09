@@ -1461,8 +1461,9 @@ preference_settings! {
     /// start-up, unless `--control`/`SOLIDCRAFT_CONTROL_PORT` name one. Read at start-up.
     agent_control: bool = true, PAGE_ASSISTANT;
     /// Add SolidCraft's MCP server to the AI apps installed on this computer at start-up
-    /// ([`crate::ai_connect`]); off takes the entries out again.
-    connect_ai_apps: bool = true, PAGE_ASSISTANT;
+    /// ([`crate::ai_connect`]); off takes the entries out again. Off by default: the user opts in,
+    /// as it edits other programs' settings and lets their agents drive the app.
+    connect_ai_apps: bool = false, PAGE_ASSISTANT;
     /// Agents the user added (the installed ones are found by themselves). API keys are never
     /// here: they live in the system keychain.
     agents: Vec<crate::agent_chat::agents::AgentConfig> = Vec::new();
@@ -3871,6 +3872,11 @@ fn prepare_preferences(
     followed: Option<&crate::theme_files::ThemeFile>,
     p: &serde_json::Value,
 ) -> Result<Prefs, String> {
+    // Agreeing to upload models to Printables is the user's answer to Open with EasyPrint's own
+    // question; a caller (the control channel, a settings profile) can withdraw it, not give it.
+    if p.get("easyprint_consent").is_some_and(|v| v != &serde_json::Value::Bool(false)) && !base.easyprint_consent {
+        return Err("`easyprint_consent` is given only by the user, in Open with EasyPrint's question; it can be set to false here".into());
+    }
     for key in ["joint_rotation_coarse", "joint_rotation_fine"] {
         if let Some(value) = p.get(key)
             && value.as_f64().is_none_or(|v| !v.is_finite() || !(0.001..=180.0).contains(&v))
