@@ -17,8 +17,9 @@ profile = ["solidcraft-engine/profile"]
 
 # The workspace lints, except unsafe_code: denied, not forbidden, so that src/open_documents.rs
 # (macOS file-open events), src/native_crash.rs (Windows exception filter), src/native_crash_macos.rs
-# (macOS crash signal handler) and src/native_frame.rs (Windows resize border, taskbar icon) can
-# allow it: none has a safe API. Keep the rest in sync with [workspace.lints].
+# (macOS crash signal handler), src/native_frame.rs (Windows resize border, taskbar icon) and
+# src/space_mouse/windows_hid.rs (Windows device names for 3D mice) can allow it: none has a safe
+# API. Keep the rest in sync with [workspace.lints].
 [lints.rust]
 unsafe_code = "deny"
 

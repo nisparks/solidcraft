@@ -93,7 +93,9 @@ selected bodies (a 3MF, 100 MB at most) to Printables' servers and opens the mod
 browser. The link expires after 30 minutes, and you need to be signed in to Printables. SolidCraft
 asks once before the first upload and remembers that you agreed. Nothing is uploaded unless you pick
 this row. SolidCraft isn't affiliated with Printables. Scripts use `file.open_in_easyprint`, which refuses unless it gets `consent: true`,
-and an AI agent's request to use it asks first.
+and an AI agent's request to use it asks first. Either way, the app uploads nothing until you have
+agreed in its own question above at least once; an agent or script can't give that answer for you
+(`ui.prefs` can withdraw `easyprint_consent`, not set it).
 
 Files sent to a slicer go to a folder only you can
 read: `~/.cache/solidcraft/slicer` on Linux, `~/Library/Caches/SolidCraft/slicer` on macOS and

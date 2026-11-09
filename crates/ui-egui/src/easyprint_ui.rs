@@ -1,7 +1,9 @@
 //! Open with EasyPrint: the UI side of `file.open_in_easyprint`. The command exports the bodies
 //! and gives them to the host (`Services::easyprint_upload`), which uploads them to Printables
 //! and answers on a channel; this opens the answer in the browser, or says why not. The model
-//! leaves the machine, so the first time asks the user (a preference remembers the answer).
+//! leaves the machine, so the first time asks the user (a preference remembers the answer). The
+//! upload itself refuses until the user has answered that question here: a caller's `consent`
+//! (an agent over the control channel, a script) can't stand in for it.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -11,6 +13,10 @@ use serde_json::{Value, json};
 
 use crate::SolveApp;
 use crate::ui_kit;
+
+/// Why an upload the user has not agreed to in the app is refused.
+pub const NOT_AGREED: &str =
+    "the user has not agreed to upload models to Printables in SolidCraft: ask them to run Open with EasyPrint themselves once, which asks them";
 
 /// What the host answers: the address to open, or why the upload failed.
 pub type Answer = Result<String, String>;
@@ -24,6 +30,9 @@ pub struct State {
     rx: Mutex<Receiver<Answer>>,
     /// An upload has been started and not answered. One at a time.
     busy: Arc<AtomicBool>,
+    /// The user agreed in the app's question (`Prefs::easyprint_consent`, copied here each frame
+    /// and before the app's own send): the session's upload refuses without it.
+    agreed: Arc<AtomicBool>,
     /// The parameters of a send waiting for the user to agree to the upload.
     ask: Option<Value>,
     /// The last address opened (a step of a scenario runs several frames, so tests can't catch it).
@@ -38,6 +47,7 @@ impl Default for State {
             tx,
             rx: Mutex::new(rx),
             busy: Arc::default(),
+            agreed: Arc::default(),
             ask: None,
             #[cfg(test)]
             opened: None,
@@ -48,8 +58,12 @@ impl Default for State {
 /// Give the session the host's way to upload (call after the services are set).
 pub fn install(app: &mut SolveApp) {
     let Some(upload) = app.services.easyprint_upload.clone() else { return };
-    let (tx, busy) = (app.easyprint.tx.clone(), app.easyprint.busy.clone());
+    app.easyprint.agreed.store(app.preferences.easyprint_consent, Ordering::SeqCst);
+    let (tx, busy, agreed) = (app.easyprint.tx.clone(), app.easyprint.busy.clone(), app.easyprint.agreed.clone());
     app.session.easyprint_upload = Some(Arc::new(move |name, bytes| {
+        if !agreed.load(Ordering::SeqCst) {
+            return Err(NOT_AGREED.into());
+        }
         if busy.swap(true, Ordering::SeqCst) {
             return Err("the last model is still being uploaded to Printables".into());
         }
@@ -74,6 +88,7 @@ pub fn request(app: &mut SolveApp, params: Value) {
 
 fn go(app: &mut SolveApp, mut params: Value) {
     let _language = solidcraft_ui_text::scope(&app.preferences.language);
+    app.easyprint.agreed.store(app.preferences.easyprint_consent, Ordering::SeqCst);
     params["consent"] = json!(true);
     if app.run("file.open_in_easyprint", params).is_ok() {
         app.set_status(solidcraft_ui_text::tr("ui.easyprint_uploading"), false);
@@ -82,6 +97,7 @@ fn go(app: &mut SolveApp, mut params: Value) {
 
 /// Per frame: open the answer of an upload, or report its failure.
 pub fn tick(app: &mut SolveApp, ctx: &egui::Context) {
+    app.easyprint.agreed.store(app.preferences.easyprint_consent, Ordering::SeqCst);
     let answer = app.easyprint.rx.lock().ok().and_then(|rx| rx.try_recv().ok());
     let Some(answer) = answer else {
         if app.easyprint.busy.load(Ordering::SeqCst) {
@@ -218,6 +234,39 @@ mod tests {
         bare.app.start("file.open_in_easyprint");
         bare.frames(2);
         assert!(bare.app.dialog.is_none() && status(&bare).1, "unavailable, with a reason");
+    }
+
+    #[test]
+    fn an_agent_saying_consent_uploads_nothing_until_the_user_agreed_in_the_app() {
+        let (mut h, names) = harness(Ok("https://www.printables.com/slice?f=1".into()));
+        let send = json!({"command": "file.open_in_easyprint", "params": {"consent": true, "bodies": ["Body1"]}});
+        let reply = h.call("engine.execute", send.clone());
+        assert_eq!(reply["ok"], false, "{reply}");
+        assert!(reply["error"].as_str().unwrap_or_default().contains("has not agreed"), "{reply}");
+        // Nor can it give the answer for the user, through the preferences or a profile.
+        let reply = h.call("ui.prefs", json!({"easyprint_consent": true}));
+        assert_eq!(reply["ok"], false, "{reply}");
+        assert!(crate::prefs::set(&mut h.app, &json!({"easyprint_consent": true})).is_err());
+        assert!(!h.app.preferences.easyprint_consent);
+        h.frames(2);
+        assert!(h.call("engine.execute", send.clone())["ok"] == false && names.lock().unwrap().is_empty());
+        assert_eq!(opened(&mut h), None);
+        // Once the user agreed in the app's question, the same request goes.
+        h.app.start("file.open_in_easyprint");
+        h.frames(2);
+        h.step(&json!({"widget": "Send"})).unwrap();
+        h.frames(3);
+        h.step(&json!({"widget": "Upload"})).unwrap();
+        assert_eq!(opened(&mut h).as_deref(), Some("https://www.printables.com/slice?f=1"));
+        let reply = h.call("engine.execute", send);
+        assert_eq!(reply["ok"], true, "{reply}");
+        assert_eq!(opened(&mut h).as_deref(), Some("https://www.printables.com/slice?f=1"));
+        assert_eq!(names.lock().unwrap().len(), 2);
+        // Withdrawing it is allowed, and stops the next one.
+        assert_eq!(h.call("ui.prefs", json!({"easyprint_consent": false}))["ok"], true);
+        h.frames(1);
+        assert_eq!(h.call("engine.execute", json!({"command": "file.open_in_easyprint", "params": {"consent": true, "bodies": ["Body1"]}}))["ok"], false);
+        assert_eq!(names.lock().unwrap().len(), 2);
     }
 
     #[test]
